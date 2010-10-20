@@ -13,7 +13,8 @@
 (defn- reply-fn [f]
   (partial (fn irc-reply-fn [f [value k]]
              (let [[[new-value] new-f] (f value)]
-               (k (str new-value))
+               (when new-value
+                 (k new-value))
                [[] (partial irc-reply-fn new-f)]))
            f))
 
@@ -38,6 +39,16 @@
          (.sendMessage conn channel (str message))
          [])))))
 
+(defn reply-selector [this target]
+  (fn [input]
+    (let [responses {:message #(.sendMessage this target %)
+                     :notice #(.sendNotice this target %)}
+          [fun value] (if (vector? input)
+                        [(responses (first input)) (second input)]
+                        [(:message responses) input])]
+      (doseq [nv (.split (with-out-str (print value)) "\n")]
+        (fun nv)))))
+
 (defn pircbot [server nick]
   (let [mq (LinkedBlockingQueue.)]
     (proxy [PircBot clojure.lang.IDeref] []
@@ -57,7 +68,7 @@
                               :hostname hostname
                               :message message
                               :bot this}]
-                   #(.sendMessage this channel %)]]))
+                   (reply-selector this channel)]]))
       (onAction [sender login hostname target action]
         (.put mq [[server nick]
                   [[:action {:target target
@@ -66,7 +77,7 @@
                              :hostname hostname
                              :action action
                              :bot this}]
-                   #(.sendMessage this channel %)]]))
+                   #(.sendMessage this target %)]]))
       (onInvite [target-nick source-nick source-login source-hostname channel]
         (.put mq [[server nick]
                   [[:invite {:target-nick target-nick
@@ -83,7 +94,7 @@
                                       :hostname hostname
                                       :message message
                                       :bot this}]
-                   #(.sendMessage this sender %)]]))
+                   (reply-selector this sender)]]))
       (onJoin [channel sender login hostname]
         (.put mq [[server nick]
                   [[:join {:sender sender
@@ -113,7 +124,7 @@
                   [[:version {:nick nick
                               :login login
                               :hostname hostname
-                              :reason reason
+                              :target target
                               :bot this}]
                    #(.sendNotice nick %)]]))
       (deref [] mq))))
@@ -123,7 +134,7 @@
   [proc server nick & channels]
   (let [conn (if-let [conn (.get connection-cache [server nick])]
                conn
-               (pircbot server nick mq))
+               (pircbot server nick))
         mq @conn]
     (try
       (when-not (.isConnected conn)
