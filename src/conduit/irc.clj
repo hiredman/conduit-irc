@@ -50,98 +50,106 @@
         (fun nv)))))
 
 (defn pircbot [server nick]
-  (let [mq (LinkedBlockingQueue.)]
-    (proxy [PircBot clojure.lang.IDeref] []
-      (onConnect []
-        (.put mq [[server nick]
-                  [[:connect {:server server :nick nick :bot this}]
-                   (constantly nil)]]))
-      (onDisconnect []
-        (.put mq [[server nick]
-                  [[:disconnect {:server server :nick nick :bot this}]
-                   (constantly nil)]]))
-      (onMessage [channel sender login hostname message]
-        (.put mq [[server nick]
-                  [[:message {:channel channel
-                              :sender sender
-                              :login login
-                              :hostname hostname
-                              :message message
-                              :bot this}]
-                   (reply-selector this channel)]]))
-      (onAction [sender login hostname target action]
-        (.put mq [[server nick]
-                  [[:action {:target target
-                             :sender sender
-                             :login login
-                             :hostname hostname
-                             :action action
-                             :bot this}]
-                   #(.sendMessage this target %)]]))
-      (onInvite [target-nick source-nick source-login source-hostname channel]
-        (.put mq [[server nick]
-                  [[:invite {:target-nick target-nick
-                             :source-nick source-nick
-                             :source-login source-login
-                             :source-hostname source-hostname
-                             :channel channel
-                             :bot this}]
-                   #(.sendMessage this channel %)]]))
-      (onPrivateMessage [sender login hostname message]
-        (.put mq [[server nick]
-                  [[:private-message {:sender sender
-                                      :login login
-                                      :hostname hostname
-                                      :message message
-                                      :bot this}]
-                   (reply-selector this sender)]]))
-      (onJoin [channel sender login hostname]
-        (.put mq [[server nick]
-                  [[:join {:sender sender
-                           :login login
-                           :hostname hostname
-                           :channel channel
-                           :bot this}]
-                   #(.sendMessage this channel %)]]))
-      (onPart [channel sender login hostname]
-        (.put mq [[server nick]
-                  [[:part {:sender sender
-                           :login login
-                           :hostname hostname
-                           :channel channel
-                           :bot this}]
-                   #(.sendMessage this channel %)]]))
-      (onQuit [nick login hostname reason]
-        (.put mq [[server nick]
-                  [[:quit {:nick nick
-                           :login login
-                           :hostname hostname
-                           :reason reason
-                           :bot this}]
-                   (constantly nil)]]))
-      (onVersion [nick login hostname target]
-        (.put mq [[server nick]
-                  [[:version {:nick nick
-                              :login login
-                              :hostname hostname
-                              :target target
-                              :bot this}]
-                   #(.sendNotice nick %)]]))
-      (deref [] mq))))
+  (locking #'pircbot
+    (if-let [conn (.get connection-cache [server nick])]
+      (let [[mq ref-count] @conn]
+        (swap! ref-count inc)
+        conn)
+      (let [mq (LinkedBlockingQueue.)
+            ref-count (atom 1)
+            conn (proxy [PircBot clojure.lang.IDeref java.io.Closeable] []
+                   (onConnect []
+                     (.put mq [[server nick]
+                               [[:connect {:server server :nick nick :bot this}]
+                                (constantly nil)]]))
+                   (onDisconnect []
+                     (.put mq [[server nick]
+                               [[:disconnect {:server server :nick nick :bot this}]
+                                (constantly nil)]]))
+                   (onMessage [channel sender login hostname message]
+                     (.put mq [[server nick]
+                               [[:message {:channel channel
+                                           :sender sender
+                                           :login login
+                                           :hostname hostname
+                                           :message message
+                                           :bot this}]
+                                (reply-selector this channel)]]))
+                   (onAction [sender login hostname target action]
+                     (.put mq [[server nick]
+                               [[:action {:target target
+                                          :sender sender
+                                          :login login
+                                          :hostname hostname
+                                          :action action
+                                          :bot this}]
+                                #(.sendMessage this target %)]]))
+                   (onInvite [target-nick source-nick source-login source-hostname channel]
+                     (.put mq [[server nick]
+                               [[:invite {:target-nick target-nick
+                                          :source-nick source-nick
+                                          :source-login source-login
+                                          :source-hostname source-hostname
+                                          :channel channel
+                                          :bot this}]
+                                #(.sendMessage this channel %)]]))
+                   (onPrivateMessage [sender login hostname message]
+                     (.put mq [[server nick]
+                               [[:private-message {:sender sender
+                                                   :login login
+                                                   :hostname hostname
+                                                   :message message
+                                                   :bot this}]
+                                (reply-selector this sender)]]))
+                   (onJoin [channel sender login hostname]
+                     (.put mq [[server nick]
+                               [[:join {:sender sender
+                                        :login login
+                                        :hostname hostname
+                                        :channel channel
+                                        :bot this}]
+                                #(.sendMessage this channel %)]]))
+                   (onPart [channel sender login hostname]
+                     (.put mq [[server nick]
+                               [[:part {:sender sender
+                                        :login login
+                                        :hostname hostname
+                                        :channel channel
+                                        :bot this}]
+                                #(.sendMessage this channel %)]]))
+                   (onQuit [nick login hostname reason]
+                     (.put mq [[server nick]
+                               [[:quit {:nick nick
+                                        :login login
+                                        :hostname hostname
+                                        :reason reason
+                                        :bot this}]
+                                (constantly nil)]]))
+                   (onVersion [nick login hostname target]
+                     (.put mq [[server nick]
+                               [[:version {:nick nick
+                                           :login login
+                                           :hostname hostname
+                                           :target target
+                                           :bot this}]
+                                #(.sendNotice nick %)]]))
+                   (deref [] [mq ref-count])
+                   (close []
+                     (when (zero? @ref-count)
+                       (.remove connection-cache [server nick])
+                       (.disconnect this))))]
+        (.put connection-cache [server nick] conn)
+        conn))))
 
 (defn irc-run
   "start a single thread executing a proc"
   [proc server nick & channels]
-  (let [conn (if-let [conn (.get connection-cache [server nick])]
-               conn
-               (pircbot server nick))
-        mq @conn]
-    (try
+  (with-open [conn (pircbot server nick)]
+    (let [[mq] @conn]
       (when-not (.isConnected conn)
         (wall-hack-method
          org.jibble.pircbot.PircBot :setName [String] conn nick)
         (.connect conn server))
-      (.put connection-cache [server nick] conn)
       (doseq [channel channels]
         (.joinChannel conn channel))
       (letfn [(next-msg [Q]
@@ -160,10 +168,7 @@
                                 (get-in proc [:parts [server nick]])))]
              (reduce comp-fn)
              (a-run)
-             (dorun)))
-      (finally
-       (.remove connection-cache [server nick])
-       (.disconnect conn)))))
+             (dorun))))))
 
 (comment
 
