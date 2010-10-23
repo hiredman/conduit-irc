@@ -140,8 +140,8 @@
       (when-not (.isConnected conn)
         (wall-hack-method
          org.jibble.pircbot.PircBot :setName [String] conn nick)
-        (.connect conn server)
-        (.put connection-cache [server nick] conn))
+        (.connect conn server))
+      (.put connection-cache [server nick] conn)
       (doseq [channel channels]
         (.joinChannel conn channel))
       (letfn [(next-msg [Q]
