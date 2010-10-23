@@ -147,9 +147,10 @@
   (with-open [conn (pircbot server nick)]
     (let [[mq] @conn]
       (when-not (.isConnected conn)
-        (wall-hack-method
-         org.jibble.pircbot.PircBot :setName [String] conn nick)
-        (.connect conn server))
+        (locking conn
+          (wall-hack-method
+           org.jibble.pircbot.PircBot :setName [String] conn nick)
+          (.connect conn server)))
       (doseq [channel channels]
         (.joinChannel conn channel))
       (letfn [(next-msg [Q]
