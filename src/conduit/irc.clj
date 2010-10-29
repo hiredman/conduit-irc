@@ -1,9 +1,11 @@
 (ns conduit.irc
   (:use [conduit.core])
   (:import (java.util.concurrent ConcurrentHashMap LinkedBlockingQueue)
-           (org.jibble.pircbot PircBot)))
+           (org.jibble.pircbot PircBot)
+           (java.io Closeable)
+           (clojure.lang IDeref)))
 
-(defonce ^{:private true} connection-cache (ConcurrentHashMap.))
+(defonce ^{:private true} connection-cache (atom {}))
 
 (defn wall-hack-method [class-name name- params obj & args]
   (-> class-name (.getDeclaredMethod (name name-) (into-array Class params))
@@ -51,13 +53,13 @@
 
 (defn pircbot [server nick]
   (locking #'pircbot
-    (if-let [conn (.get connection-cache [server nick])]
+    (if-let [conn (get @connection-cache [server nick])]
       (let [[mq ref-count] @conn]
         (swap! ref-count inc)
         conn)
       (let [mq (LinkedBlockingQueue.)
             ref-count (atom 1)
-            conn (proxy [PircBot clojure.lang.IDeref java.io.Closeable] []
+            conn (proxy [PircBot IDeref Closeable] []
                    (onConnect []
                      (.put mq [[server nick]
                                [[:connect {:server server :nick nick :bot this}]
@@ -136,14 +138,14 @@
                    (deref [] [mq ref-count])
                    (close []
                      (when (zero? @ref-count)
-                       (.remove connection-cache [server nick])
+                       (swap! connection-cache dissoc [server nick])
                        (.disconnect this))))]
-        (.put connection-cache [server nick] conn)
+        (swap! connection-cache assoc [server nick] conn)
         conn))))
 
 (defn irc-run
   "start a single thread executing a proc"
-  [proc server nick & channels]
+  [proc server nick threads & channels]
   (with-open [conn (pircbot server nick)]
     (let [[mq] @conn]
       (when-not (.isConnected conn)
@@ -162,14 +164,18 @@
                     [[] (partial handle-msg new-fn)])
                   (catch Exception e
                     (.printStackTrace e)
-                    [[] fun])))]
-        (->> [(next-msg mq)
-              (partial handle-msg
-                       (partial select-fn
-                                (get-in proc [:parts [server nick]])))]
-             (reduce comp-fn)
-             (a-run)
-             (dorun))))))
+                    [[] fun])))
+              (run []
+                (->> [(next-msg mq)
+                      (partial handle-msg
+                               (partial select-fn
+                                        (get-in proc [:parts [server nick]])))]
+                     (reduce comp-fn)
+                     (a-run)
+                     (dorun)))]
+        (dotimes [_ (dec threads)]
+          (future (run)))
+        (run)))))
 
 (comment
 
