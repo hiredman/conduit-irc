@@ -20,27 +20,6 @@
                [[] (partial irc-reply-fn new-f)]))
            f))
 
-(defn a-irc
-  [server nick & [proc]]
-  (if proc
-    (let [id [server nick]]
-      (assoc proc
-        :type :irc
-        :parts (assoc (:parts proc)
-                 id {:type :irc
-                     id (reply-fn (:reply proc))})))
-    (conduit-proc
-     (fn [[channel message]]
-       (let [conn (.get connection-cache [server nick])]
-         (when-not (.isConnected conn)
-           (wall-hack-method org.jibble.pircbot.PircBot
-                             :setName [String] conn nick)
-           (.connect conn server)
-           (.put connection-cache [server nick] conn))
-         (.joinChannel conn channel)
-         (.sendMessage conn channel (str message))
-         [])))))
-
 (defn reply-selector [this target]
   (fn [input]
     (let [responses {:message #(.sendMessage this target %)
@@ -142,6 +121,21 @@
                        (.disconnect this))))]
         (swap! connection-cache assoc [server nick] conn)
         conn))))
+
+(defn a-irc
+  [server nick & [proc]]
+  (if proc
+    (let [id [server nick]]
+      (assoc proc
+        :type :irc
+        :parts (assoc (:parts proc)
+                 id {:type :irc
+                     id (reply-fn (:reply proc))})))
+    (conduit-proc
+     (fn [[target input]]
+       (with-open [bot (pircbot server nick)]
+         ((reply-selector bot target) input))
+       []))))
 
 (defn irc-run
   "start a single thread executing a proc"
