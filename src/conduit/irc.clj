@@ -146,7 +146,12 @@
         (locking conn
           (wall-hack-method
            org.jibble.pircbot.PircBot :setName [String] conn nick)
-          (.connect conn server)))
+          (if (coll? server)
+            (.connect conn
+                      (first server)
+                      (second server)
+                      (second (rest server)))
+            (.connect conn server))))
       (doseq [channel channels]
         (.joinChannel conn channel))
       (letfn [(next-msg [Q]
