@@ -139,7 +139,7 @@
 
 (defn irc-run
   "start a single thread executing a proc"
-  [proc server nick threads & channels]
+  [proc server nick & channels]
   (with-open [conn (pircbot server nick)]
     (let [[mq] @conn]
       (when-not (.isConnected conn)
@@ -172,8 +172,6 @@
                      (reduce comp-fn)
                      (a-run)
                      (dorun)))]
-        (dotimes [_ (dec threads)]
-          (future (run)))
         (run)))))
 
 (comment
