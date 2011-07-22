@@ -132,12 +132,12 @@
     conn))
 
 (defn a-irc [nick proc]
-  (let [id (str "irc-" nick)])
-  (assoc proc
-    :type :irc
-    :parts (assoc (:parts proc)
-             id {:type :irc
-                   id (reply-fn (:reply proc))})))
+  (let [id (str "irc-" nick)]
+    (assoc proc
+      :type :irc
+      :parts (assoc (:parts proc)
+               id {:type :irc
+                   id (reply-fn (:reply proc))}))))
 
 (defn irc-run
   "start a single thread executing a proc"
