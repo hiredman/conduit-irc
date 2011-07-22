@@ -32,12 +32,15 @@
         (fun nv)))))
 
 (definterface IConnect
-  (connect [_]))
+  (connect []))
+
+(defn connect [iconnect]
+  (.connect iconnect :dummy))
 
 (defn pircbot [server nick]
   (let [mq (LinkedBlockingQueue.)
         conn (proxy [PircBot IDeref Closeable IConnect] []
-               (connect [] (.connect this server))
+               (connect [dummy] (.connect this server))
                (onConnect []
                  (.put mq [nick
                            [[:connect {:server server :nick nick :bot this}]
@@ -138,10 +141,14 @@
 
 (defn irc-run
   "start a single thread executing a proc"
-  [proc & channels]
-  (let [mq @conn]
+  [proc & [channel-or-exception-handler & channels]]
+  (let [mq @*pircbot*
+        channels (if (fn? channel-or-exception-handler)
+                   channels
+                   (conj channels channel-or-exception-handler))
+        funs (get-in proc [:parts (str "irc-" (.getNick *pircbot*))])]
     (doseq [channel channels]
-      (.joinChannel conn channel))
+      (.joinChannel *pircbot* channel))
     (letfn [(next-msg [Q]
               (fn next-msg-inner [_]
                 [[(.take Q)] next-msg-inner]))
@@ -150,13 +157,13 @@
                 (let [[_ new-fn] (fun msg)]
                   [[] (partial handle-msg new-fn)])
                 (catch Exception e
-                  (.printStackTrace e)
+                  (if (fn? channel-or-exception-handler)
+                    (channel-or-exception-handler e)
+                    (.printStackTrace e))
                   [[] fun])))
             (run []
               (->> [(next-msg mq)
-                    (partial handle-msg
-                             (partial select-fn
-                                      (get-in proc [:parts (str "irc-" (.getNick conn))])))]
+                    (partial handle-msg (partial select-fn funs))]
                    (reduce comp-fn)
                    (a-run)
                    (dorun)))]
@@ -165,7 +172,7 @@
 (comment
 
   (with-open [p (pircbot "irc.freenode.net" "conduitbot")]
-    (.connect p)
+    (connect p)
     (binding [*pircbot* p]
       (irc-run
        (a-irc "conduitbot"
@@ -173,6 +180,5 @@
                'message (a-par :message
                                pass-through)))
        "#clojurebot")))
-  
 
   )
