@@ -12,6 +12,11 @@
 
 (declare *pircbot*)
 
+;; TODO: need a similar reconnect utility function
+
+(defn send-notice [target notice-str]
+  (.sendNotice *pircbot* target notice-str))
+
 (defn- reply-fn [f]
   (partial (fn irc-reply-fn [f [value k]]
              (let [[[new-value] new-f] (f value)]
@@ -23,7 +28,7 @@
 (defn reply-selector [this target]
   (fn [input]
     (let [responses {:message #(.sendMessage this target %)
-                     :notice #(.sendNotice this target %)
+                     :notice (partial send-notice target)
                      :action #(.sendAction this target %)}
           [fun value] (if (vector? input)
                         [(responses (first input)) (second input)]
