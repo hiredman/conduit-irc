@@ -1,6 +1,6 @@
 (ns conduit.irc
   (:use [conduit.core])
-  (:import (java.util.concurrent ConcurrentHashMap LinkedBlockingQueue)
+  (:import (java.util.concurrent LinkedBlockingQueue)
            (org.jibble.pircbot PircBot)
            (java.io Closeable)
            (clojure.lang IDeref)))
