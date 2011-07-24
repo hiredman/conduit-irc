@@ -10,7 +10,7 @@
       (doto (.setAccessible true))
       (.invoke obj (into-array Object args))))
 
-(declare *pircbot*)
+(def ^{:dynamic true} *pircbot* nil)
 
 ;; TODO: need a similar reconnect utility function
 
@@ -38,7 +38,7 @@
 
 (defn pircbot [server nick]
   (let [mq (LinkedBlockingQueue.)
-        conn (proxy [PircBot IDeref Closeable IConnect] []
+        conn (proxy [PircBot IDeref Closeable] []
                (onConnect []
                  (.put mq [nick
                            [[:connect {:server server :nick nick :bot this}]
