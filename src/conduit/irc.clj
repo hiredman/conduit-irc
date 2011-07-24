@@ -129,7 +129,12 @@
                  (.disconnect this)))]
     (wall-hack-method
      org.jibble.pircbot.PircBot :setName [String] conn nick)
-    (.connect conn server)
+    (if (coll? sever)
+      (.connect conn server)
+      (.connect conn
+                (first server)
+                (second server)
+                (second (rest server))))
     conn))
 
 (defn a-irc [nick proc]
