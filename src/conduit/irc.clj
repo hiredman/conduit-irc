@@ -129,7 +129,7 @@
                  (.disconnect this)))]
     (wall-hack-method
      org.jibble.pircbot.PircBot :setName [String] conn nick)
-    (if (coll? sever)
+    (if (coll? server)
       (.connect conn server)
       (.connect conn
                 (first server)
