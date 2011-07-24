@@ -38,6 +38,12 @@
 
 (defn pircbot [server nick]
   (let [mq (LinkedBlockingQueue.)
+        connector (if (coll? server)
+                    (fn [conn]
+                      (let [[server port pass] server]
+                        (.connect conn server port pass)))
+                    #(.connect % server))
+        server (if (coll? server) (first server) server)
         conn (proxy [PircBot IDeref Closeable] []
                (onConnect []
                  (.put mq [nick
@@ -129,12 +135,7 @@
                  (.disconnect this)))]
     (wall-hack-method
      org.jibble.pircbot.PircBot :setName [String] conn nick)
-    (if (coll? server)
-      (.connect conn server)
-      (.connect conn
-                (first server)
-                (second server)
-                (second (rest server))))
+    (connector conn)
     conn))
 
 (defn a-irc [nick proc]
