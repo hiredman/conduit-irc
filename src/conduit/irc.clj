@@ -36,16 +36,9 @@
       (doseq [nv (.split (with-out-str (print value)) "\n")]
         (fun nv)))))
 
-(definterface IConnect
-  (connect []))
-
-(defn connect [iconnect]
-  (.connect iconnect :dummy))
-
 (defn pircbot [server nick]
   (let [mq (LinkedBlockingQueue.)
         conn (proxy [PircBot IDeref Closeable IConnect] []
-               (connect [dummy] (.connect this server))
                (onConnect []
                  (.put mq [nick
                            [[:connect {:server server :nick nick :bot this}]
