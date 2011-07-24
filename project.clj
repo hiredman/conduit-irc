@@ -1,4 +1,4 @@
-(defproject conduit-irc "2.0.0"
+(defproject conduit-irc "2.0.1-SNAPSHOT"
   :description "irc over conduit"
   :dependencies [[org.clojure/clojure "1.3.0-beta1"]
                  [pircbot/pircbot "1.4.2"]
