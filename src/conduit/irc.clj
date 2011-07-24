@@ -115,7 +115,7 @@
                                     :server server}]
                             (constantly nil)]]))
                (onVersion [nick login hostname target]
-                 (.put mq [[server nick]
+                 (.put mq [nick
                            [[:version {:nick nick
                                        :login login
                                        :hostname hostname
@@ -127,26 +127,31 @@
                  mq)
                (close []
                  (.disconnect this)))]
+    (wall-hack-method
+     org.jibble.pircbot.PircBot :setName [String] conn nick)
+    (.connect conn server)
     conn))
 
 (defn a-irc [nick proc]
-  (let [id (str "irc-" nick)]
+  (let [id nick]
     (assoc proc
       :type :irc
       :parts (assoc (:parts proc)
                id {:type :irc
                    id (reply-fn (:reply proc))}))))
 
+(defn join [channels]
+  (doseq [channel channels]
+    (.joinChannel *pircbot* channel)))
+
 (defn irc-run
   "start a single thread executing a proc"
   [proc & [channel-or-exception-handler & channels]]
-  (let [mq @*pircbot*
-        channels (if (fn? channel-or-exception-handler)
-                   channels
-                   (conj channels channel-or-exception-handler))
-        funs (get-in proc [:parts (str "irc-" (.getNick *pircbot*))])]
-    (doseq [channel channels]
-      (.joinChannel *pircbot* channel))
+  (let [funs (get-in proc [:parts (.getNick *pircbot*)])]
+    (join
+     (if (fn? channel-or-exception-handler)
+       channels
+       (conj channels channel-or-exception-handler)))
     (letfn [(next-msg [Q]
               (fn next-msg-inner [_]
                 [[(.take Q)] next-msg-inner]))
@@ -160,7 +165,7 @@
                     (.printStackTrace e))
                   [[] fun])))
             (run []
-              (->> [(next-msg mq)
+              (->> [(next-msg @*pircbot*)
                     (partial handle-msg (partial select-fn funs))]
                    (reduce comp-fn)
                    (a-run)
@@ -170,13 +175,10 @@
 (comment
 
   (with-open [p (pircbot "irc.freenode.net" "conduitbot")]
-    (connect p)
     (binding [*pircbot* p]
       (irc-run
        (a-irc "conduitbot"
-              (a-select
-               'message (a-par :message
-                               pass-through)))
+              (a-arr (constantly "hello")))
        "#clojurebot")))
 
   )
